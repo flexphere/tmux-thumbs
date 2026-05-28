@@ -58,6 +58,78 @@ impl<'a> PartialEq for Match<'a> {
   }
 }
 
+/// 1 バイトの先頭バイトから UTF-8 文字長を推定 (1〜4)
+fn utf8_char_len(first_byte: u8) -> usize {
+  if first_byte < 0x80 {
+    1
+  } else if first_byte < 0xc0 {
+    1
+  } else if first_byte < 0xe0 {
+    2
+  } else if first_byte < 0xf0 {
+    3
+  } else {
+    4
+  }
+}
+
+/// line のバイト位置 byte_pos に対応するセル (見た目の列) 位置を返す。
+/// ANSI エスケープシーケンス (CSI / OSC) は 0 セルとしてスキップする。
+/// wide char は unicode_width で 2 セルとして数える。
+pub fn byte_pos_to_cell(line: &str, byte_pos: usize) -> i32 {
+  use unicode_width::UnicodeWidthChar;
+  let bytes = line.as_bytes();
+  let target = byte_pos.min(bytes.len());
+  let mut cells: i32 = 0;
+  let mut i: usize = 0;
+
+  while i < target {
+    let b = bytes[i];
+    if b == 0x1b && i + 1 < bytes.len() {
+      match bytes[i + 1] {
+        b'[' => {
+          // CSI: ESC [ params final-byte (0x40..=0x7e)
+          i += 2;
+          while i < bytes.len() && !(0x40..=0x7e).contains(&bytes[i]) {
+            i += 1;
+          }
+          if i < bytes.len() {
+            i += 1;
+          }
+        }
+        b']' => {
+          // OSC: ESC ] params BEL or ST
+          i += 2;
+          while i < bytes.len() {
+            if bytes[i] == 0x07 {
+              i += 1;
+              break;
+            }
+            if bytes[i] == 0x1b && i + 1 < bytes.len() && bytes[i + 1] == b'\\' {
+              i += 2;
+              break;
+            }
+            i += 1;
+          }
+        }
+        _ => {
+          i += 2;
+        }
+      }
+    } else {
+      let char_len = utf8_char_len(b);
+      let end = (i + char_len).min(bytes.len());
+      if let Ok(s) = std::str::from_utf8(&bytes[i..end]) {
+        if let Some(c) = s.chars().next() {
+          cells += UnicodeWidthChar::width(c).unwrap_or(0) as i32;
+        }
+      }
+      i = end;
+    }
+  }
+  cells
+}
+
 pub struct State<'a> {
   pub lines: &'a Vec<&'a str>,
   alphabet: &'a str,
@@ -133,8 +205,9 @@ impl<'a> State<'a> {
             // Never hint or broke bash color sequences, but process it
             if *name != "bash" {
               for (subtext, substart) in captures.iter() {
+                let byte_x = (offset + matching.start() as i32 + *substart as i32) as usize;
                 matches.push(Match {
-                  x: offset + matching.start() as i32 + *substart as i32,
+                  x: byte_pos_to_cell(line, byte_x),
                   y: index as i32,
                   pattern: name,
                   text: subtext,

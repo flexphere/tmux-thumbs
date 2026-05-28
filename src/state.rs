@@ -2,10 +2,12 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::fmt;
 
-const EXCLUDE_PATTERNS: [(&'static str, &'static str); 2] = [
+const EXCLUDE_PATTERNS: [(&'static str, &'static str); 3] = [
   ("bash", r"[[:cntrl:]]\[([0-9]{1,2};)?([0-9]{1,2})?m"),
   // starship Powerline セグメント (U+E0B6 ... U+E0B4) を除外
   ("bash", r"\u{E0B6}[^\u{E0B6}\u{E0B4}]*\u{E0B4}"),
+  // 時刻表現 HH:MM / HH:MM:SS を除外 (デフォルト ipv6 regex の誤マッチ対策)
+  ("bash", r"\b\d{1,2}:\d{2}(:\d{2})?\b"),
 ];
 
 const PATTERNS: [(&'static str, &'static str); 15] = [

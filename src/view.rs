@@ -123,11 +123,8 @@ impl<'a> View<'a> {
         &self.background_color
       };
 
-      // Find long utf sequences and extract it from mat.x
-      let line = &self.state.lines[mat.y as usize];
-      let prefix = &line[0..mat.x as usize];
-      let extra = prefix.width_cjk() - prefix.chars().count();
-      let offset = (mat.x as u16) - (extra as u16);
+      // mat.x is already cell position (state.rs byte_pos_to_cell で変換済)
+      let offset = mat.x as u16;
       let text = self.make_hint_text(mat.text);
 
       print!(
